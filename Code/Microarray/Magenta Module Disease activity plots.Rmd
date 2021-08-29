@@ -1,0 +1,721 @@
+---
+title: "Magenta Module Disease Activity Plots"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(rstatix)
+library(ggpubr)
+library(car)
+
+setwd("~/VascMicroarray/Usable Data/")
+
+phenodata <- read.csv("Phenodata.csv")
+load(file = "VascNetworkConstruction.RData")
+```
+
+## Magenta Eigengene analysis
+
+Creating a data frame with values for future analysis plus Magenta ME
+One-way ANOVA with Tukey post-hoc test
+```{r magenta}
+magentaME <- MEs$MEmagenta
+timepoint <- phenodata$timepoint_short
+diagnosis <- phenodata$diagnosis_short
+anca <- phenodata$ANCA_short
+crp <- phenodata$crp
+bvas <- phenodata$BVAS
+gfr <- phenodata$gfr
+pr3_titre <- phenodata$pr3_titre
+mpo_titre <- phenodata$mpo_titre
+
+magenta <- cbind(magentaME, timepoint, diagnosis, anca, crp, bvas, gfr, pr3_titre, mpo_titre)
+magenta <- as.data.frame(magenta)
+magenta <- transform(magenta, magentaME = as.numeric(magentaME),
+                     timepoint = as.character(timepoint),
+                     diagnosis = as.character(diagnosis),
+                     anca = as.character(anca),
+                     crp = as.numeric(crp),
+                     bvas = as.numeric(bvas),
+                     gfr = as.numeric(gfr),
+                     pr3_titre = as.numeric(pr3_titre),
+                     mpo_titre = as.numeric(mpo_titre))
+magenta$timepoint <- factor(magenta$timepoint, 
+                            levels = c("untimed", "zero", "three", "twelve"))
+magenta$diagnosis <- factor(magenta$diagnosis, 
+                            levels = c("Healthy", "GPA", "MPA"))
+magenta$anca <- factor(magenta$anca, 
+                       levels = c("Healthy", "neg", "PR3", "MPO", "double"))
+
+#Stats between MagentaME and Time
+magenta_aov <- aov(magentaME ~ timepoint, data = magenta)
+# Summary of the analysis
+summary(magenta_aov)
+#Determine which groups are significant
+magenta_tuk <- magenta %>% 
+    tukey_hsd(magentaME ~ timepoint)
+magenta_tuk <-magenta_tuk %>% 
+    add_xy_position(x = "timepoint")
+magenta_tuk
+
+#Stats between Magenta ME and Diagnosis
+mag_diag_aov <- aov(magentaME ~ diagnosis, data = magenta)
+# Summary of the analysis
+summary(mag_diag_aov)
+#Determine which groups are significant
+mag_diag_tuk <- magenta %>% 
+    tukey_hsd(magentaME ~ diagnosis)
+mag_diag_tuk <-mag_diag_tuk %>% 
+    add_xy_position(x = "diagnosis")
+mag_diag_tuk
+```
+
+Plot Magenta ME over timepoints in boxplot
+```{r}
+pdf(file = "Magenta Module/Magenta module over time.pdf", height = 3, width = 4)
+ggplot(magenta, aes(x = timepoint, y = magentaME)) +
+    geom_boxplot(outlier.shape = NA, fill = c("skyblue1", "brown1", "darkorange1", "yellow2")) +
+    scale_x_discrete(labels = c("HC", "AAV Zero", "AAV Three", "AAV Twelve")) +
+    geom_jitter(width = 0.1, size = 0.7)+ 
+    theme_classic() +
+    labs(x = "Timepoint", y = "Magenta Eigengene") +
+    stat_pvalue_manual(magenta_tuk, label = "p.adj.signif", tip.length = 0.01, hide.ns = T)
+dev.off()
+```
+
+Plot Magenta ME with Diagnosis in boxplot
+```{r}
+pdf(file = "Magenta Module/Magenta module and diagnosis.pdf", width = 4, height = 3)
+ggplot(magenta, aes(x = diagnosis, y = magentaME)) +
+    geom_boxplot(outlier.shape = NA, fill = c("skyblue1", "darkgreen", "darkmagenta")) +
+    scale_x_discrete(labels = c("Healthy", "GPA", "MPA")) +
+    geom_jitter(width = 0.1, size = 0.7)+ 
+    theme_classic() +
+    labs(x = "Disease", y = "Magenta Eigengene") +
+    stat_pvalue_manual(mag_diag_tuk, label = "p.adj.signif", tip.length = 0.01)
+dev.off()
+```
+
+
+Stats and Plot Magenta ME with ANCA status
+```{r}
+anca_magenta <-subset(magenta, !is.na(anca))
+
+#Stats between Magenta ME and ANCA
+mag_anca_aov <- aov(magentaME ~ anca, data = anca_magenta)
+# Summary of the analysis
+summary(mag_anca_aov)
+#Determine which groups are significant
+mag_anca_tuk <- anca_magenta %>% 
+    tukey_hsd(magentaME ~ anca)
+mag_anca_tuk <-mag_anca_tuk %>% 
+    add_xy_position(x = "anca")
+mag_anca_tuk
+
+pdf(file = "Magenta Module/Magenta module and ANCA status.pdf", width = 4, height = 3)
+ggplot(anca_magenta, aes(x = anca, y = magentaME)) +
+    geom_boxplot(outlier.shape = NA, fill = c("skyblue1", "grey60", "darkgreen", "darkmagenta", "tan4")) +
+    scale_x_discrete(labels = c("Healthy", "ANCA-", "PR3+", "MPO+", "PR3+MPO+")) +
+    geom_jitter(width = 0.1, size = 0.7)+ 
+    theme_classic() +
+    labs(x = "ANCA status", y = "Magenta Eigengene") +
+    stat_pvalue_manual(mag_anca_tuk, label = "p.adj.signif", tip.length = 0.01, hide.ns = TRUE)
+dev.off()
+```
+
+
+## CRP analysis
+
+Creating a data frame with only samples that have a CRP value
+One-way ANOVA with bonferroni post-hoc test
+Plot CRP over time in Box plot
+```{r crp_magenta}
+crp_magenta <- subset(magenta, !is.na(crp))
+
+#Stats between CRP and Time
+crp_aov <- aov(crp ~ timepoint, data = crp_magenta)
+# Summary of the analysis
+summary(crp_aov)
+#Determine which groups are significant
+crp_tuk <- crp_magenta %>% 
+    tukey_hsd(crp ~ timepoint)
+crp_tuk <- crp_tuk %>% 
+    add_xy_position(x = "timepoint")
+crp_tuk
+
+pdf(file = "CRP levels over time.pdf", height = 3, width = 4)
+ggplot(crp_magenta, aes(x = timepoint, y = crp)) +
+    geom_boxplot(outlier.shape = NA, fill = c("brown1", "darkorange1", "yellow2")) +
+    scale_x_discrete(labels = c("AAV Zero", "AAV Three", "AAV Twelve")) +
+    geom_jitter(width = 0.1, size = 0.7)+ 
+    theme_classic() +
+    labs(x = "Timepoint", y = "CRP (mg/dL)") +
+    stat_pvalue_manual(crp_tuk, label = "p.adj.signif", tip.length = 0.01, hide.ns = TRUE)
+dev.off()
+```
+
+Magenta and CRP scatter plot
+```{r}
+pdf(file = "Magenta Module/Magenta module and CRP correlation.pdf", 
+    height = 3, width = 5)
+ggplot(crp_magenta, aes(x = crp, y = magentaME)) +
+    geom_point(aes(color = timepoint, shape = timepoint, fill = timepoint),
+               color = "black", size = 2, show.legend = FALSE) +
+    scale_shape_manual(values = c(21, 22, 23), 
+                       name = "Timepoint (months)", 
+                       labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("brown1", "darkorange1", "yellow2"),
+                      name = "Timepoint (months)", 
+                      labels = c("Zero", "Three", "Twelve")) +
+    geom_smooth(method = lm, se = FALSE, colour = "skyblue1") +
+    labs(x = "CRP (mg/dL)", y = "Magenta Eigengene") +
+    theme_classic() +
+    stat_cor(method = "pearson", label.x = 150, label.y = -0.05)
+dev.off()
+```
+
+## BVAS analysis
+
+Creating a data frame with only samples that have a BVAS value
+One-way ANOVA with bonferroni post-hoc test
+Plot BVAS over time in Box plot
+```{r bvas_magenta}
+bvas_magenta <- subset(magenta, !is.na(bvas))
+bvas_magenta$timepoint <- factor(bvas_magenta$timepoint, 
+                            levels = c("zero", "three", "twelve"))
+
+#Stats between BVAS and Time
+bvas_aov <- aov(bvas ~ timepoint, data = bvas_magenta)
+# Summary of the analysis
+summary(bvas_aov)
+#Determine which groups are significant
+bvas_tuk <- bvas_magenta %>% 
+    tukey_hsd(bvas ~ timepoint)
+bvas_tuk <- bvas_tuk %>% 
+    add_xy_position(x = "timepoint")
+bvas_tuk
+
+pdf(file = "BVAS levels over time.pdf", height = 3, width = 4)
+ggplot(bvas_magenta, aes(x = timepoint, y = bvas)) +
+    geom_boxplot(outlier.shape = NA, fill = c("brown1", "darkorange1", "yellow2")) +
+    scale_x_discrete(labels = c("AAV Zero", "AAV Three", "AAV Twelve")) +
+    geom_jitter(width = 0.1, size = 0.7)+ 
+    theme_classic() +
+    labs(x = "Timepoint", y = "BVAS Score") +
+    stat_pvalue_manual(bvas_tuk, label = "p.adj.signif", tip.length = 0.01, hide.ns = TRUE)
+dev.off()
+```
+
+Magenta and BVAS scatter plot
+```{r}
+pdf(file = "Magenta Module/Magenta module and BVAS correlation.pdf", 
+    height = 3, width = 5)
+ggplot(bvas_magenta, aes(x = bvas, y = magentaME)) +
+    geom_point(aes(color = timepoint, shape = timepoint, fill = timepoint),
+               color = "black", size = 2, show.legend = FALSE) +
+    scale_shape_manual(values = c(21, 22, 23), 
+                       name = "Timepoint (months)", 
+                       labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("brown1", "darkorange1", "yellow2"),
+                      name = "Timepoint (months)", 
+                      labels = c("Zero", "Three", "Twelve")) +
+    geom_smooth(method = lm, se = FALSE, colour = "skyblue1") +
+    labs(x = "BVAS Score", y = "Magenta Eigengene") +
+    theme_classic() +
+    stat_cor(method = "pearson", label.x = 23, label.y = -0.05)
+dev.off()
+```
+
+BVAS and CRP scatter plot
+```{r}
+bvas_crp <- subset(magenta, !is.na(bvas)) 
+bvas_crp <- subset(bvas_crp, !is.na(crp))
+
+pdf(file = "CRP and BVAS correlation.pdf", height = 3, width = 5)
+ggplot(bvas_crp, aes(x = bvas, y = crp)) +
+    geom_point(aes(color = timepoint, shape = timepoint, fill = timepoint),
+               color = "black", size = 2) +
+    scale_shape_manual(values = c(21, 22, 23), 
+                       name = "Timepoint (months)", 
+                       labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("brown1", "darkorange1", "yellow2"),
+                      name = "Timepoint (months)", 
+                      labels = c("Zero", "Three", "Twelve")) +
+    geom_smooth(method = lm, se = FALSE, colour = "skyblue1") +
+    labs(x = "BVAS Score", y = "CRP (mg/dL)") +
+    theme_classic() +
+    theme(legend.position = "top") +
+    stat_cor(method = "pearson", label.x = 25, label.y = 10)
+dev.off()
+```
+
+## GFR analysis
+
+Creating a data frame with only samples that have a GFR value
+One-way ANOVA with bonferroni post-hoc test
+Plot BVAS over time in Box plot
+```{r gfr_magenta}
+gfr_magenta <- subset(magenta, !is.na(gfr))
+gfr_magenta$timepoint <- factor(gfr_magenta$timepoint, 
+                            levels = c("zero", "three", "twelve"))
+
+#Stats between GFR and Time
+gfr_aov <- aov(gfr ~ timepoint, data = gfr_magenta)
+# Summary of the analysis
+summary(gfr_aov)
+
+pdf(file = "GFR levels over time.pdf", height = 3, width = 4)
+ggplot(gfr_magenta, aes(x = timepoint, y = gfr)) +
+    geom_boxplot(outlier.shape = NA, fill = c("brown1", "darkorange1", "yellow2")) +
+    scale_x_discrete(labels = c("AAV Zero", "AAV Three", "AAV Twelve")) +
+    geom_jitter(width = 0.1, size = 0.7)+ 
+    theme_classic() +
+    labs(x = "Timepoint", y = expression(paste("GFR (mL/min/1.73m" ^ "2", ")")))
+    #stat_pvalue_manual(gfr_tuk, label = "p.adj.signif", tip.length = 0.01, hide.ns = TRUE)
+dev.off()
+```
+
+Magenta and GFR scatter plot
+```{r}
+pdf(file = "Magenta Module/Magenta module and GFR correlation.pdf", 
+    height = 3, width = 5)
+ggplot(gfr_magenta, aes(x = gfr, y = magentaME)) +
+    geom_point(aes(color = timepoint, shape = timepoint, fill = timepoint),
+               color = "black", size = 2, show.legend = FALSE) +
+    scale_shape_manual(values = c(21, 22, 23), 
+                       name = "Timepoint (months)", 
+                       labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("brown1", "darkorange1", "yellow2"),
+                      name = "Timepoint (months)", 
+                      labels = c("Zero", "Three", "Twelve")) +
+    geom_smooth(method = lm, se = FALSE, colour = "skyblue1") +
+    labs(x = expression(paste("GFR (mL/min/1.73m" ^ "2", ")")), y = "Magenta Eigengene") +
+    theme_classic() +
+    stat_cor(method = "pearson", label.x = 37, label.y = 0.25)
+dev.off()
+```
+
+
+## PR3 vs MPO Analysis
+
+Magenta Eigengene over time splitting by ANCA status
+```{r split_magenta}
+split_magenta <- magenta[diagnosis != "Healthy",]
+split_magenta <- subset(split_magenta, anca != "double")
+split_magenta <- subset(split_magenta, anca != "neg")
+split_magenta$timepoint <- factor(split_magenta$timepoint,levels = c("zero", "three", "twelve"))
+split_magenta$anca <- factor(split_magenta$anca, levels = c("PR3", "MPO"))
+
+#Stats between Magenta and ANCA intersecting with Time
+split_aov <- aov(magentaME ~ anca * timepoint, data = split_magenta)
+# Summary of the analysis
+summary(split_aov)
+#Determine which groups are significant
+
+
+pdf(file = "Magenta Module/Magenta module over time - PR3-MPO.pdf", height = 3, width = 4)
+ggboxplot(split_magenta, x = "timepoint", y = "magentaME", fill = "anca", add = "jitter", shape = "anca", add.params = list(size = 1)) +
+    theme_classic() +
+    scale_x_discrete(labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("darkgreen", "darkmagenta")) +
+    labs(x = "Timepoint (months)", y = "Magenta Eigengene") +
+    theme(legend.position = "none")
+dev.off()
+```
+
+PR3 vs MPO for CRP levels
+```{r split_crp}
+split_crp <- subset(split_magenta, !is.na(crp))
+#Stats between Magenta and ANCA intersecting with Time
+split_crp_aov <- aov(crp ~ anca * timepoint, data = split_crp)
+# Summary of the analysis
+summary(split_crp_aov)
+#No difference between ANCA status so no post-hoc
+
+pdf(file = "CRP over time - PR3-MPO.pdf", height = 3, width = 4)
+ggboxplot(split_crp, x = "timepoint", y = "crp", fill = "anca", add = "jitter", shape = "anca", add.params = list(size = 1)) +
+    theme_classic() +
+    scale_x_discrete(labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("darkgreen", "darkmagenta"),
+                      name = "ANCA") +
+    labs(x = "Timepoint (months)", y = "CRP mg/dL") +
+    theme(legend.position = "none")
+dev.off()
+
+```
+
+PR3 vs MPO for BVAS levels
+```{r split_bvas}
+split_bvas <- subset(split_magenta, !is.na(bvas))
+#Stats between Magenta and ANCA intersecting with Time
+split_bvas_aov <- aov(bvas ~ anca * timepoint, data = split_bvas)
+# Summary of the analysis
+summary(split_bvas_aov)
+#No difference between ANCA status so no post-hoc
+
+pdf(file = "BVAS over time - PR3-MPO.pdf", height = 3, width = 4)
+ggboxplot(split_bvas, x = "timepoint", y = "bvas", fill = "anca", add = "jitter", shape = "anca", add.params = list(size = 1)) +
+    theme_classic() +
+    scale_x_discrete(labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("darkgreen", "darkmagenta"),
+                      name = "ANCA") +
+    labs(x = "Timepoint (months)", y = "BVAS Score") +
+    theme(legend.position = "none")
+dev.off()
+```
+
+PR3 vs MPO for GFR levels
+```{r split_gfr}
+split_gfr <- subset(split_magenta, !is.na(gfr))
+#Stats between Magenta and ANCA intersecting with Time
+split_gfr_aov <- aov(gfr ~ anca * timepoint, data = split_gfr)
+# Summary of the analysis
+summary(split_gfr_aov)
+#Determine which groups are significant
+split_gfr_tuk <- split_gfr %>% 
+    group_by(timepoint) %>% 
+    tukey_hsd(gfr ~ anca) %>% 
+    ungroup()
+split_gfr_tuk <- split_gfr_tuk %>% 
+    add_xy_position(x = "timepoint")
+
+pdf(file = "GFR over time - PR3-MPO.pdf", height = 3, width = 4)
+ggboxplot(split_gfr, x = "timepoint", y = "gfr", fill = "anca", add = "jitter", shape = "anca", add.params = list(size = 1)) +
+    scale_y_continuous(limits=c(0,70)) +
+    theme_classic() +
+    scale_x_discrete(labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("darkgreen", "darkmagenta")) +
+    labs(x = "Timepoint (months)", y = expression(paste("GFR (mL/min/1.73m" ^ "2", ")"))) +
+    theme(legend.position = "none") +
+    stat_pvalue_manual(split_gfr_tuk, label = "p.adj.signif", tip.length = 0.01, hide.ns = T, y.position = 65)
+dev.off()
+```
+
+## GPA vs MPA analysis
+
+Magenta eigengene over time
+```{r diag_split_magenta}
+diag_split_magenta <- magenta[diagnosis != "Healthy",]
+diag_split_magenta$timepoint <- factor(diag_split_magenta$timepoint,
+                                       levels = c("zero", "three", "twelve"))
+diag_split_magenta$diagnosis <- factor(diag_split_magenta$diagnosis, 
+                                       levels = c("GPA", "MPA"))
+
+#Stats between Magenta and ANCA intersecting with Time
+diag_split_aov <- aov(magentaME ~ diagnosis * timepoint, data = diag_split_magenta)
+# Summary of the analysis
+summary(diag_split_aov)
+#Determine which groups are significant
+diag_split_tuk <- split_gfr %>% 
+    group_by(timepoint) %>% 
+    tukey_hsd(magentaME ~ diagnosis) %>% 
+    ungroup()
+diag_split_tuk <- diag_split_tuk %>% 
+    add_xy_position(x = "timepoint")
+diag_split_tuk
+
+pdf(file = "Magenta Module/Magenta module over time - GPA-MPA.pdf", height = 3, width = 4)
+ggboxplot(diag_split_magenta, x = "timepoint", y = "magentaME", fill = "diagnosis", add = "jitter", shape = "diagnosis", add.params = list(size = 1)) +
+    theme_classic() +
+    scale_x_discrete(labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("darkgreen", "darkmagenta")) +
+    labs(x = "Timepoint (months)", y = "Magenta Eigengene") +
+    theme(legend.position = "none") +
+    stat_pvalue_manual(diag_split_tuk, label = "p.adj.signif", tip.length = 0.01, hide.ns = T, y.position = 0.3)
+dev.off()
+
+#Magenta eigengene over time between GPA and MPA patients with GFR as a covariate
+diag_split_aov_gfr <- aov(magentaME ~ diagnosis * timepoint + gfr, data = diag_split_magenta)
+# Summary of the analysis
+car::Anova(diag_split_aov_gfr, type = 2)
+#GFR does not influence magentaME difference in diagnosis
+```
+
+
+GPA vs MPA for CRP levels
+```{r diag_split_crp}
+diag_split_crp <- subset(diag_split_magenta, !is.na(crp))
+#Stats between Magenta and ANCA intersecting with Time
+diag_split_crp_aov <- aov(crp ~ diagnosis * timepoint, data = diag_split_crp)
+# Summary of the analysis
+summary(diag_split_crp_aov)
+#Determine which groups are significant
+diag_split_crp_tuk <- diag_split_crp %>% 
+    group_by(timepoint) %>% 
+    tukey_hsd(crp ~ diagnosis) %>% 
+    ungroup()
+diag_split_crp_tuk <- diag_split_crp_tuk %>% 
+    add_xy_position(x = "timepoint")
+diag_split_crp_tuk
+
+pdf(file = "CRP over time - GPA-MPA.pdf", height = 3, width = 4)
+ggboxplot(diag_split_crp, x = "timepoint", y = "crp", fill = "diagnosis", add = "jitter", shape = "diagnosis", add.params = list(size = 1)) +
+    theme_classic() +
+    scale_x_discrete(labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("darkgreen", "darkmagenta"),
+                      name = "ANCA") +
+    labs(x = "Timepoint (months)", y = "CRP mg/dL") +
+    theme(legend.position = "none") +
+    stat_pvalue_manual(diag_split_crp_tuk, label = "p.adj.signif", tip.length = 0.01, hide.ns = T)
+dev.off()
+
+#CRP over time between GPA and MPA patients with GFR as a covariate
+diag_split_crp_aov_gfr <- aov(crp ~ diagnosis * timepoint + gfr, data = diag_split_crp)
+# Summary of the analysis
+car::Anova(diag_split_crp_aov_gfr, type = 2)
+#GFR effects difference in crp seen in different diagnosis
+```
+
+GPA vs MPA for BVAS levels
+```{r diag_split_bvas}
+diag_split_bvas <- subset(diag_split_magenta, !is.na(bvas))
+#Stats between Magenta and ANCA intersecting with Time
+diag_split_bvas_aov <- aov(bvas ~ diagnosis * timepoint, data = diag_split_bvas)
+# Summary of the analysis
+summary(diag_split_bvas_aov)
+#No difference in diagnosis so post-hox not completed
+
+pdf(file = "BVAS over time - GPA-MPA.pdf", height = 3, width = 4)
+ggboxplot(diag_split_bvas, x = "timepoint", y = "bvas", fill = "diagnosis", add = "jitter", shape = "diagnosis", add.params = list(size = 1)) +
+    theme_classic() +
+    scale_x_discrete(labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("darkgreen", "darkmagenta"),
+                      name = "ANCA") +
+    theme(legend.position = "none") +
+    labs(x = "Timepoint (months)", y = "BVAS Score")
+dev.off()
+```
+
+GPA vs MPA for GFR levels
+```{r diag_split_gfr}
+diag_split_gfr <- subset(diag_split_magenta, !is.na(gfr))
+#Stats between Magenta and ANCA intersecting with Time
+diag_split_gfr_aov <- aov(gfr ~ diagnosis * timepoint, data = diag_split_gfr)
+# Summary of the analysis
+summary(diag_split_gfr_aov)
+#Determine which groups are significant
+diag_split_gfr_tuk <- diag_split_gfr %>% 
+    group_by(timepoint) %>% 
+    tukey_hsd(gfr ~ diagnosis) %>% 
+    ungroup()
+diag_split_gfr_tuk <- diag_split_gfr_tuk %>% 
+    add_xy_position(x = "timepoint")
+diag_split_gfr_tuk
+
+pdf(file = "GFR over time - GPA-MPA.pdf", height = 3, width = 4)
+ggboxplot(diag_split_gfr, x = "timepoint", y = "gfr", fill = "diagnosis", add = "jitter", shape = "diagnosis", add.params = list(size = 1)) +
+    theme_classic() +
+    scale_x_discrete(labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("darkgreen", "darkmagenta")) +
+    labs(x = "Timepoint (months)", y = expression(paste("GFR (mL/min/1.73m" ^ "2", ")"))) +
+    theme(legend.position = "none") +
+    stat_pvalue_manual(diag_split_gfr_tuk, label = "p.adj.signif", tip.length = 0.01, hide.ns = T, y.position = 65)
+dev.off()
+```
+
+Magenta and GFR scatter plot for PR3 patients
+```{r pr3_magenta}
+pr3_magenta <- magenta[anca == "PR3",]
+pr3_magenta <- subset(pr3_magenta, !is.na(gfr))
+
+pdf(file = "Magenta Module/Magenta module and GFR correlation - PR3.pdf", 
+    height = 3, width = 5)
+ggplot(pr3_magenta, aes(x = gfr, y = magentaME)) +
+    geom_point(aes(color = timepoint, shape = timepoint, fill = timepoint),
+               color = "black", size = 2) +
+    scale_shape_manual(values = c(21, 22, 23), 
+                       name = "Timepoint (months)", 
+                       labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("brown1", "darkorange1", "yellow2"),
+                      name = "Timepoint (months)", 
+                      labels = c("Zero", "Three", "Twelve")) +
+    geom_smooth(method = lm, se = FALSE, colour = "skyblue1") +
+    labs(x = expression(paste("GFR (mL/min/1.73m" ^ "2", ")")), y = "Magenta Eigengene", title = "PR3 Patients") +
+    theme_classic() +
+    theme(plot.title = element_text(hjust = 0.5), legend.position = "none") +
+    stat_cor(method = "pearson", label.x = 37, label.y = 0.2)
+dev.off()
+```
+
+Magenta and GFR scatter plot for MPO patients
+```{r mpo_magenta}
+mpo_magenta <- magenta[anca == "MPO",]
+mpo_magenta <- subset(mpo_magenta, !is.na(gfr))
+
+pdf(file = "Magenta Module/Magenta module and GFR correlation - MPO.pdf", 
+    height = 3, width = 5)
+ggplot(mpo_magenta, aes(x = gfr, y = magentaME)) +
+    geom_point(aes(color = timepoint, shape = timepoint, fill = timepoint),
+               color = "black", size = 2) +
+    scale_shape_manual(values = c(21, 22, 23), 
+                       name = "Timepoint (months)", 
+                       labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("brown1", "darkorange1", "yellow2"),
+                      name = "Timepoint (months)", 
+                      labels = c("Zero", "Three", "Twelve")) +
+    geom_smooth(method = lm, se = FALSE, colour = "skyblue1") +
+    labs(x = expression(paste("GFR (mL/min/1.73m" ^ "2", ")")), y = "Magenta Eigengene", title = "MPO Patients") +
+    theme_classic() +
+    theme(plot.title = element_text(hjust = 0.5), legend.position = "none") +
+    stat_cor(method = "pearson", label.x = 33, label.y = 0.15)
+dev.off()
+```
+
+Magenta and GFR scatter plot for GPA patients
+```{r gpa_magenta}
+gpa_magenta <- magenta[diagnosis == "GPA",]
+gpa_magenta <- subset(gpa_magenta, !is.na(gfr))
+
+pdf(file = "Magenta Module/Magenta module and GFR correlation - GPA.pdf", 
+    height = 3, width = 5)
+ggplot(gpa_magenta, aes(x = gfr, y = magentaME)) +
+    geom_point(aes(color = timepoint, shape = timepoint, fill = timepoint),
+               color = "black", size = 2) +
+    scale_shape_manual(values = c(21, 22, 23), 
+                       name = "Timepoint (months)", 
+                       labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("brown1", "darkorange1", "yellow2"),
+                      name = "Timepoint (months)", 
+                      labels = c("Zero", "Three", "Twelve")) +
+    geom_smooth(method = lm, se = FALSE, colour = "skyblue1") +
+    labs(x = expression(paste("GFR (mL/min/1.73m" ^ "2", ")")), y = "Magenta Eigengene", title = "GPA Patients") +
+    theme_classic() +
+    theme(plot.title = element_text(hjust = 0.5), legend.position = "none") +
+    stat_cor(method = "pearson", label.x = 37, label.y = 0.2)
+dev.off()
+```
+
+Magenta and GFR scatter plot for MPA patients
+```{r mpa_magenta}
+mpa_magenta <- magenta[diagnosis == "MPA",]
+mpa_magenta <- subset(mpa_magenta, !is.na(gfr))
+
+pdf(file = "Magenta Module/Magenta module and GFR correlation - MPA.pdf", 
+    height = 3, width = 5)
+ggplot(mpa_magenta, aes(x = gfr, y = magentaME)) +
+    geom_point(aes(color = timepoint, shape = timepoint, fill = timepoint),
+               color = "black", size = 2) +
+    scale_shape_manual(values = c(21, 22, 23), 
+                       name = "Timepoint (months)", 
+                       labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("brown1", "darkorange1", "yellow2"),
+                      name = "Timepoint (months)", 
+                      labels = c("Zero", "Three", "Twelve")) +
+    geom_smooth(method = lm, se = FALSE, colour = "skyblue1") +
+    labs(x = expression(paste("GFR (mL/min/1.73m" ^ "2", ")")), y = "Magenta Eigengene", title = "MPA Patients") +
+    theme_classic() +
+    theme(plot.title = element_text(hjust = 0.5), legend.position = "none") +
+    stat_cor(method = "pearson", label.x = 37, label.y = 0.25)
+dev.off()
+```
+
+
+
+Magenta and pr3_titre scatter plot for PR3 patients
+```{r pr3_magenta}
+pr3_titre_magenta <- magenta[anca == "PR3",]
+pr3_titre_magenta <- subset(pr3_titre_magenta, !is.na(pr3_titre))
+
+pdf(file = "Magenta Module/Magenta module and pr3_titre correlation - PR3.pdf", 
+    height = 3, width = 5)
+ggplot(pr3_titre_magenta, aes(x = pr3_titre, y = magentaME)) +
+    geom_point(aes(color = timepoint, shape = timepoint, fill = timepoint),
+               color = "black", size = 2) +
+    scale_shape_manual(values = c(21, 22, 23), 
+                       name = "Timepoint (months)", 
+                       labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("brown1", "darkorange1", "yellow2"),
+                      name = "Timepoint (months)", 
+                      labels = c("Zero", "Three", "Twelve")) +
+    geom_smooth(method = lm, se = FALSE, colour = "skyblue1") +
+    labs(x = "PR3 Titre (iu/mL)", y = "Magenta Eigengene", title = "PR3 Patients") +
+    theme_classic() +
+    theme(plot.title = element_text(hjust = 0.5), legend.position = "none") +
+    stat_cor(method = "pearson", label.x = 375, label.y = 0.2)
+dev.off()
+```
+
+Magenta and mpo_titre scatter plot for MPO patients
+```{r mpo_magenta}
+mpo_titre_magenta <- magenta[anca == "MPO",]
+mpo_titre_magenta <- subset(mpo_titre_magenta, !is.na(mpo_titre))
+
+pdf(file = "Magenta Module/Magenta module and mpo_titre correlation - MPO.pdf", 
+    height = 3, width = 5)
+ggplot(mpo_titre_magenta, aes(x = mpo_titre, y = magentaME)) +
+    geom_point(aes(color = timepoint, shape = timepoint, fill = timepoint),
+               color = "black", size = 2) +
+    scale_shape_manual(values = c(21, 22, 23), 
+                       name = "Timepoint (months)", 
+                       labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("brown1", "darkorange1", "yellow2"),
+                      name = "Timepoint (months)", 
+                      labels = c("Zero", "Three", "Twelve")) +
+    geom_smooth(method = lm, se = FALSE, colour = "skyblue1") +
+    labs(x = "MPO Titre (iu/mL)", y = "Magenta Eigengene", title = "MPO Patients") +
+    theme_classic() +
+    theme(plot.title = element_text(hjust = 0.5), legend.position = "none") +
+    stat_cor(method = "pearson", label.x = 375, label.y = 0.12)
+dev.off()
+```
+
+GFR scatter plot for GPA patients with gfr < 60
+```{r} 
+gpa_magenta <- magenta[diagnosis == "GPA",]
+gpa_magenta <- subset(gpa_magenta, !is.na(gfr))
+gpa_renal_magenta <- subset(gpa_magenta, gfr < 60)
+
+pdf(file = "Magenta Module/Magenta module and GFR correlation - GPA renal patients.pdf", 
+    height = 3, width = 5)
+ggplot(gpa_renal_magenta, aes(x = gfr, y = magentaME)) +
+    geom_point(aes(color = timepoint, shape = timepoint, fill = timepoint),
+               color = "black", size = 3) +
+    scale_shape_manual(values = c(21, 22, 23), 
+                       name = "Timepoint (months)", 
+                       labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("brown1", "darkorange1", "yellow2"),
+                      name = "Timepoint (months)", 
+                      labels = c("Zero", "Three", "Twelve")) +
+    geom_smooth(method = lm, se = FALSE, colour = "skyblue1") +
+    labs(x = expression(paste("GFR (mL/min/1.73m" ^ "2", ")")), y = "Magenta Eigengene", title = "GPA Patients") +
+    theme_classic() +
+    theme(plot.title = element_text(hjust = 0.5), legend.position = "none") +
+    stat_cor(method = "pearson", label.x = 37, label.y = 0.2)
+dev.off()
+```
+
+GFR scatter plot for PR3 patients with gfr < 60
+```{r}
+pr3_magenta <- magenta[anca == "PR3",]
+pr3_magenta <- subset(pr3_magenta, !is.na(gfr))
+pr3_renal_magenta <- subset(pr3_magenta, gfr < 60)
+
+pdf(file = "Magenta Module/Magenta module and GFR correlation - PR3 renal patients.pdf", 
+    height = 3, width = 5)
+ggplot(pr3_renal_magenta, aes(x = gfr, y = magentaME)) +
+    geom_point(aes(color = timepoint, shape = timepoint, fill = timepoint),
+               color = "black", size = 3) +
+    scale_shape_manual(values = c(21, 22, 23), 
+                       name = "Timepoint (months)", 
+                       labels = c("Zero", "Three", "Twelve")) +
+    scale_fill_manual(values = c("brown1", "darkorange1", "yellow2"),
+                      name = "Timepoint (months)", 
+                      labels = c("Zero", "Three", "Twelve")) +
+    geom_smooth(method = lm, se = FALSE, colour = "skyblue1") +
+    labs(x = expression(paste("GFR (mL/min/1.73m" ^ "2", ")")), y = "Magenta Eigengene", title = "PR3 Patients") +
+    theme_classic() +
+    theme(plot.title = element_text(hjust = 0.5), legend.position = "none") +
+    stat_cor(method = "pearson", label.x = 37, label.y = 0.2)
+dev.off()
+```
+
+
+```{r}
+
+```
+
+
+
